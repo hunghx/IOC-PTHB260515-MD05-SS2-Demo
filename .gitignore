@@ -1,0 +1,51 @@
+# Gradle build directories and cache
+.gradle/
+**/build/
+build/
+.gradletasknamecache
+
+# Keep Gradle Wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+
+# Compiled Java class files
+*.class
+bin/
+**/bin/
+
+# Package Files (except wrapper jar)
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# Log files
+*.log
+logs/
+**/logs/
+
+# IntelliJ IDEA
+.idea/
+**/.idea/
+*.iml
+*.ipr
+*.iws
+out/
+**/out/
+
+# Visual Studio Code
+.vscode/
+**/.vscode/
+
+# Eclipse
+.project
+.classpath
+.settings/
+**/.settings/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
