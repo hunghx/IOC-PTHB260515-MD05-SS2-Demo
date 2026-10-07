@@ -1,8 +1,14 @@
 package ra.edu.authservice.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ra.edu.authservice.config.JwtTokenProvider;
+import ra.edu.authservice.config.UserPrincipal;
 import ra.edu.authservice.constant.AuthConstant;
 import ra.edu.authservice.constant.UserStatus;
 import ra.edu.authservice.dto.request.LoginRequest;
@@ -17,10 +23,6 @@ import ra.edu.authservice.exception.ResourceNotFoundException;
 import ra.edu.authservice.repository.UserRepository;
 import ra.edu.authservice.service.AuthService;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
 import java.util.UUID;
 
 @Service
@@ -28,6 +30,9 @@ import java.util.UUID;
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final AuthenticationManager authenticationManager;
+    private final JwtTokenProvider jwtTokenProvider;
 
     @Override
     @Transactional
@@ -39,7 +44,7 @@ public class AuthServiceImpl implements AuthService {
 
         User user = User.builder()
                 .email(cleanEmail)
-                .password(hashPassword(request.getPassword()))
+                .password(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName().trim())
                 .avatarUrl(AuthConstant.DEFAULT_AVATAR)
                 .role(request.getRole())
@@ -60,24 +65,29 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         String cleanEmail = request.getEmail().trim().toLowerCase();
-        User user = userRepository.findByEmail(cleanEmail)
-                .orElseThrow(() -> new AppException("Email hoặc mật khẩu không chính xác", 401));
 
-        if (!user.getPassword().equals(hashPassword(request.getPassword()))) {
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(cleanEmail, request.getPassword())
+            );
+        } catch (Exception e) {
             throw new AppException("Email hoặc mật khẩu không chính xác", 401);
         }
+
+        UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
+
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng"));
 
         if (user.getStatus() == UserStatus.BLOCKED) {
             throw new AppException("Tài khoản của bạn đã bị khóa", 403);
         }
 
-        // Tạo JWT Token giả lập cơ bản cho Microservice
-        String simulatedToken = Base64.getEncoder().encodeToString(
-                (user.getId() + ":" + user.getEmail() + ":" + user.getRole()).getBytes(StandardCharsets.UTF_8)
-        );
+        String jwtToken = jwtTokenProvider.generateToken(user.getId(), user.getEmail(), user.getRole());
 
         return LoginResponse.builder()
-                .accessToken(simulatedToken)
+                .accessToken(jwtToken)
                 .tokenType("Bearer")
                 .expiresIn(86400L)
                 .user(LoginResponse.UserInfo.builder()
@@ -95,6 +105,19 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng với ID: " + userId));
 
+        return mapToProfileResponse(user);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserProfileResponse getProfileByEmail(String email) {
+        User user = userRepository.findByEmail(email.trim().toLowerCase())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng với email: " + email));
+
+        return mapToProfileResponse(user);
+    }
+
+    private UserProfileResponse mapToProfileResponse(User user) {
         return UserProfileResponse.builder()
                 .userId(user.getId())
                 .email(user.getEmail())
@@ -104,15 +127,5 @@ public class AuthServiceImpl implements AuthService {
                 .status(user.getStatus())
                 .createdAt(user.getCreatedAt())
                 .build();
-    }
-
-    private String hashPassword(String rawPassword) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(rawPassword.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
-            return rawPassword;
-        }
     }
 }

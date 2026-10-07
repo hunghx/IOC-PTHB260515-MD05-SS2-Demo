@@ -15,4 +15,6 @@ public interface AuthService {
     LoginResponse login(LoginRequest request);
 
     UserProfileResponse getProfile(UUID userId);
+
+    UserProfileResponse getProfileByEmail(String email);
 }
